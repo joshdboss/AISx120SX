@@ -11,3 +11,8 @@ AISx120SX::AISx120SX(int CS)
 {
   _CS = CS;
 }
+
+// Empty and unused destructor
+AISx120SX::~AISx120SX()
+{
+}
