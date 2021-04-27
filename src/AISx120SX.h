@@ -97,6 +97,7 @@ public:
   // verifies there were no boot errors and sets up the device
   bool setup(bandwidth bandwidthX, bandwidth bandwidthY);
 
+  // perform a soft reset of the device
   bool reset();
 
   // reads the acceleration values from the sensor

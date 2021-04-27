@@ -61,12 +61,41 @@ bool AISx120SX::setup(bandwidth bandwidthX, bandwidth bandwidthY)
       writeBitMask(command, FIR_BW_SEL_CHX, bandwidthX); // x axis bandwidth
       writeReg(uint8_t REG_CTRL_1, uint8_t command);
 
+      // find the sensor type
+      uint8_t sensorTypeRead = readWriteReg(REG_ID_SENSOR_TYPE);
+      if (sensorTypeRead == 0x1A) // single axis sensor
+      {
+        axisNumber = 1;
+      }
+      else if (sensorTypeRead == 0x2A) // dual axis sensor
+      {
+        axisNumber = 2;
+      }
+      else // error
+      {
+        return false;
+      }
+
       selfTest(); // perform a self test
 
       // start acquisition by setting END_OF_INIT flag to 1
-      writeReg(uint8_t REG_CTRL_0, 1U);
+      readWriteReg(REG_CTRL_0, 1U);
+      return true;
     }
   }
+  return false;
+}
+
+bool reset()
+{
+  readWriteReg(SOFT_RST, 2U);
+  delay(500);
+  readWriteReg(SOFT_RST, 1U);
+  delay(500);
+  readWriteReg(SOFT_RST, 2U);
+  delay(500);
+  updateStatus(REG_STATUS_0);
+  return rst_active;
 }
 
 uint32_t AISx120SX::readBitMask(uint32_t data, uint32_t mask)
