@@ -17,51 +17,88 @@
 
 #include "AIS_regs.h"
 
+typedef enum {
+  _400Hz,
+  _800Hz,
+  _1600Hz
+} bandwidth;
+
+typedef enum {
+  initialization,
+  normal,
+  test,
+  error
+} statusTypes;
 
 // AISx120SX class definition
 class AISx120SX
 {
 private:
-  // Chip select pin assignment
-  int _CS;
+  uint8_t _CS;        // Chip select pin assignment
+  uint8_t axisNumber; // 1 for AIS1120SX and 2 for AIS2120SX
 
-  // 
+  // REG_STATUS_0 flags
+  statusTypes status;
+  bool testmode_enabled;
+  bool reg_ctrl_0_wr_err;
+  bool loss_cap;
+  bool end_of_pwrup;
+  bool rst_active;
+  
+  // REG_STATUS_1 flags
+  bool spi_err;
+  bool eeprom_err;
+  bool off_canc_chy_err;
+  bool off_canc_chx_err;
+  bool reg_config_wr_err;
+  bool reg_ctrl_1_wr_err;
+  
+  // REG_STATUS_2 flags
+  bool a2d_sat_chy;
+  bool a2d_sat_chx;
+  bool charge_pump_err;
+  bool vreg_low_volt_det;
+  bool vreg_high_volt_det;
+  bool vdd_low_volt_det;
+  bool vdd_high_volt_det;
+  
+
+  SPISettings AISSettings(5000000, MSBFIRST, SPI_MODE3); // SPI settings
 
   // Find parity (of any width up to the width of an unsigned)
   int calcEvenParityBit(unsigned par, unsigned width);
 
   // finds if a given payload has even parity
   int calculateEvenParity(char *payload, int size);
-  
+
   // reads the bits in data given a bit mask
-  uint8_t readBitMask(uint8_t data, uint8_t mask);
+  uint32_t readBitMask(uint32_t data, uint32_t mask);
 
-  // write the bits in data given a bit mask and a full width message
-  uint8_t writeBitMask(uint8_t data, uint8_t mask, uint8_t message);
-  
-  // reads from a register
-  uint8_t readReg(uint8_t address);
+  // write the bits from message in data given a bit mask
+  bool writeBitMask(uint32_t &data, uint32_t mask, uint32_t message);
 
-  // writes to a register. returns 0 if there were any errors
-  bool writeReg(uint8_t address, uint8_t message);
-  
+  // reads or writes to a register. returns 0xFF if there were any errors
+  // returns 0 if it was write operation. else returns read content
+  uint8_t readWriteReg(uint8_t address, uint8_t data);
+
   // updates the given status register
   uint8_t updateStatus(uint8_t address);
-  
+
   // performs self tests on the device
   void selfTest();
 
 public:
   // Constructor with configurable chip select pin
-  AISx120SX(int CS);
+  AISx120SX(uint8_t CS);
 
   // Destructor
   ~AISx120SX();
 
   // verifies there were no boot errors and sets up the device
-  bool setup();
+  bool setup(bandwidth bandwidthX, bandwidth bandwidthY);
+
+  bool reset();
 
   // reads the acceleration values from the sensor
   int16_t *readAccel();
-
 };
