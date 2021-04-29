@@ -16,6 +16,7 @@
 #include <SPI.h>
 
 #include "AIS_regs.h"
+#include "CRC.h"
 
 typedef enum {
   _400Hz,
@@ -36,6 +37,8 @@ class AISx120SX
 private:
   uint8_t _CS;        // Chip select pin assignment
   uint8_t axisNumber; // 1 for AIS1120SX and 2 for AIS2120SX
+
+  SPISettings AISSettings;
 
   // REG_STATUS_0 flags
   statusTypes status;
@@ -61,28 +64,25 @@ private:
   bool vreg_high_volt_det;
   bool vdd_low_volt_det;
   bool vdd_high_volt_det;
-  
-
-  SPISettings AISSettings(5000000, MSBFIRST, SPI_MODE3); // SPI settings
 
   // Find parity (of any width up to the width of an unsigned)
   int calcEvenParityBit(unsigned par, unsigned width);
 
   // finds if a given payload has even parity
-  int calculateEvenParity(char *payload, int size);
+  int calculateEvenParity(uint8_t *payload, int size);
 
   // reads the bits in data given a bit mask
-  uint32_t readBitMask(uint32_t data, uint32_t mask);
+  uint8_t readBitMask(uint8_t data, uint8_t mask);
 
   // write the bits from message in data given a bit mask
-  bool writeBitMask(uint32_t &data, uint32_t mask, uint32_t message);
+  uint8_t writeBitMask(uint8_t data, uint8_t mask, uint8_t message);
 
   // reads or writes to a register. returns 0xFF if there were any errors
   // returns 0 if it was write operation. else returns read content
   uint8_t readWriteReg(uint8_t address, uint8_t data);
 
   // updates the given status register
-  uint8_t updateStatus(uint8_t address);
+  void updateStatus(uint8_t address);
 
   // performs self tests on the device
   void selfTest();

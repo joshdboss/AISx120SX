@@ -6,6 +6,8 @@
  * 
  */
 
+#pragma once
+
 // File to define the register addresses and bits according to fig 16
 
 // Define the accessible registers addresses
@@ -85,6 +87,8 @@
 #define SOFT_RST                0b0000'0011
 
 // Bit masks for SPI commands
+// These are actually not used since working with uint8_t arrays
+// Kept in case work needs to be done with uint32_t commands directly
 #define ACC_SDI_CH_SELECT       0b1100'0000'0000'0000'0000'0000'0000'0000
 #define ACC_SDI_SEN             0b0010'0000'0000'0000'0000'0000'0000'0000
 #define ACC_SDI_PARITY          0b0001'0000'0000'0000'0000'0000'0000'0000
@@ -106,7 +110,7 @@
 #define NON_ACC_SDI_CRC         0b0000'0000'0000'0000'0000'0000'1111'1111
 
 #define NON_ACC_SDO_SEN         0b1000'0000'0000'0000'0000'0000'0000'0000
-#define NON_ACC_SDO_SEN         0b0110'0000'0000'0000'0000'0000'0000'0000
+#define NON_ACC_SDO_OP_CODE     0b0110'0000'0000'0000'0000'0000'0000'0000
 #define NON_ACC_SDO_PARITY      0b0001'0000'0000'0000'0000'0000'0000'0000
 #define NON_ACC_SDO_ADDRESS     0b0000'0011'1110'0000'0000'0000'0000'0000
 #define NON_ACC_SDO_DATA        0b0000'0000'0001'1111'1110'0000'0000'0000

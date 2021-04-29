@@ -10,6 +10,7 @@
 AISx120SX::AISx120SX(uint8_t CS)
 {
   _CS = CS;
+  SPISettings AISSettings(5000000, MSBFIRST, SPI_MODE3);
 }
 
 // Empty and unused destructor
@@ -30,20 +31,20 @@ int AISx120SX::calcEvenParityBit(unsigned par, unsigned width)
   return par % 2;
 }
 
-int AISx120SX::calculateEvenParity(char *payload, int size)
+int AISx120SX::calculateEvenParity(uint8_t *payload, int size)
 {
-  unsigned char r = 0;
+  uint8_t r = 0;
   int i;
   for (i = 0; i < size; i++)
   {
     r ^= payload[i];
   }
-  return calcEvenParityBit(r, CHAR_BIT);
+  return calcEvenParityBit(r, 8);
 }
 
 bool AISx120SX::setup(bandwidth bandwidthX, bandwidth bandwidthY)
 {
-  uint8_t command; // empty command for later use
+  uint8_t command = 0; // empty command for later use
 
   updateStatus(REG_STATUS_0);
   updateStatus(REG_STATUS_1);
@@ -57,12 +58,12 @@ bool AISx120SX::setup(bandwidth bandwidthX, bandwidth bandwidthY)
         !vreg_high_volt_det && !vdd_low_volt_det && !vdd_high_volt_det)
     {
       // set the acquistion rate
-      writeBitMask(command, FIR_BW_SEL_CHY, bandwidthY); // y axis bandwidth
-      writeBitMask(command, FIR_BW_SEL_CHX, bandwidthX); // x axis bandwidth
-      writeReg(uint8_t REG_CTRL_1, uint8_t command);
+      command = writeBitMask(command, FIR_BW_SEL_CHY, bandwidthY); // y axis
+      command = writeBitMask(command, FIR_BW_SEL_CHX, bandwidthX); // x axis
+      readWriteReg(REG_CTRL_1, command);
 
       // find the sensor type
-      uint8_t sensorTypeRead = readWriteReg(REG_ID_SENSOR_TYPE);
+      uint8_t sensorTypeRead = readWriteReg(REG_ID_SENSOR_TYPE, 0);
       if (sensorTypeRead == 0x1A) // single axis sensor
       {
         axisNumber = 1;
@@ -86,7 +87,7 @@ bool AISx120SX::setup(bandwidth bandwidthX, bandwidth bandwidthY)
   return false;
 }
 
-bool reset()
+bool AISx120SX::reset()
 {
   readWriteReg(SOFT_RST, 2U);
   delay(500);
@@ -98,16 +99,16 @@ bool reset()
   return rst_active;
 }
 
-uint32_t AISx120SX::readBitMask(uint32_t data, uint32_t mask)
+uint8_t AISx120SX::readBitMask(uint8_t data, uint8_t mask)
 {
-  uint32_t maskedData = data & mask; // mask the data
+  uint8_t maskedData = data & mask; // mask the data
 
   // figure out how many bits to shift the data
   // correspondings to trailing zeros in the mask
-  trailingZeroCount = 0;
+  uint8_t trailingZeroCount = 0;
   while (mask != 0)
   {
-    if (mask & 1 == 1)
+    if ((mask & 1) == 1)
     { // reached the first set bit
       break;
     }
@@ -121,17 +122,16 @@ uint32_t AISx120SX::readBitMask(uint32_t data, uint32_t mask)
   return maskedData >> trailingZeroCount; // shift data all the way right
 }
 
-bool AISx120SX::writeBitMask(uint32_t &data, uint32_t mask, uint32_t message)
+uint8_t AISx120SX::writeBitMask(uint8_t data, uint8_t mask, uint8_t message)
 {
-  uint32_t tempData = data;    // don't work on the original data yet
-  tempData = tempData & ~mask; // set bits in the mask equal to zero
+  data = data & ~mask; // set bits in the mask equal to zero
 
   // figure out how many bits to shift the data
   // correspondings to trailing zeros in the mask
-  trailingZeroCount = 0;
+  uint8_t trailingZeroCount = 0;
   while (mask != 0)
   {
-    if (mask & 1 == 1)
+    if ((mask & 1) == 1)
     { // reached the first set bit
       break;
     }
@@ -144,47 +144,53 @@ bool AISx120SX::writeBitMask(uint32_t &data, uint32_t mask, uint32_t message)
 
   if (message > mask) // the message is wider than the mask
   {
-    return false;
+    return 0xFF;
   }
   else
   {
     message = message << trailingZeroCount; // align message with mask
-    data = tempData | message;              // insert message into data
-    return true;
+    return data | message;                  // insert message into data
   }
 }
 
 // reads from a register
-uint8_t AISx120SX::readWriteReg(uint8_t address, uint8_t data = 0)
+uint8_t AISx120SX::readWriteReg(uint8_t address, uint8_t data)
 {
   // get the operation mode
   uint8_t operationMode = 3U; // binary 11
-  if (Write)
+  if (data != 0)
   {
     operationMode = 1U; // binary 01
   }
 
   // create the command to send to the device
-  uint32_t command;                                          // empty command
-  writeBitMask(command, NON_ACC_SDI_OP_CODE, operationMode); // set op mode
-  writeBitMask(command, NON_ACC_SDI_ADDRESS, address);       // set address
-  writeBitMask(command, NON_ACC_SDI_DATA, data);             // set data
+  uint8_t command[4] = {0};                       // empty command
+  command[0] = command[0] | (operationMode << 6); // set op mode
+  // sensor mode is zero so not set
+  command[0] = command[0] | (address >> 3); // first two bits address
+  command[1] = command[1] | (address << 5); // last three bits address
+  command[1] = command[1] | (data >> 3);    // first 5 bits of data
+  command[2] = command[2] | (data << 5);    // last 3 bits of data
 
   if (calculateEvenParity(command, sizeof(command))) // if even
   {
-    writeBitMask(command, NON_ACC_SDI_PARITY, 1U); // set parity to odd
+    bitSet(command[0], 4); // set parity to odd
   }
 
   // calculate and set the CRC
   unsigned char crc = Fast_CRC_Cal8Bits(0, sizeof(command), command);
-  writeBitMask(command, NON_ACC_SDI_CRC, crc);
+  command[3] = crc;
 
   // send the request to the device
   // start SPI communication with the device
   SPI.beginTransaction(AISSettings);
   digitalWrite(_CS, LOW);
 
-  SPI.transfer(command, sizeof(command)); // transfer the command
+  // send the command
+  SPI.transfer(command[0]);
+  SPI.transfer(command[1]);
+  SPI.transfer(command[2]);
+  SPI.transfer(command[3]);
 
   // end SPI communication
   digitalWrite(_CS, HIGH);
@@ -195,28 +201,35 @@ uint8_t AISx120SX::readWriteReg(uint8_t address, uint8_t data = 0)
   // to the device to process the request
   // delayMicroseconds(10); // wait a bit before reading
 
-  uint32_t buffer; // buffer where to store the reading
+  uint8_t buffer[4]; // buffer where to store the reading
 
   // receive the request to the device
   // start SPI communication with the device
   SPI.beginTransaction(AISSettings);
   digitalWrite(_CS, LOW);
 
-  SPI.transfer(buffer, sizeof(buffer)); // receive the reading
+  // receive the reading
+  buffer[0] = SPI.transfer(0);
+  buffer[1] = SPI.transfer(0);
+  buffer[2] = SPI.transfer(0);
+  buffer[3] = SPI.transfer(0);
 
   // end SPi communication
   digitalWrite(_CS, HIGH);
   SPI.endTransaction();
 
   // verify the CRC
-  crc = readBitMask(buffer, NON_ACC_SDO_CRC); // get the CRC
-  writeBitMask(buffer, NON_ACC_SDO_CRC, 0);   // clear the crc from the buffer
+  crc = buffer[3]; // get the CRC
+  buffer[3] = 0;   // clear the crc from the buffer
 
   // if CRCs match and there are no error flags
   if (crc == Fast_CRC_Cal8Bits(0, sizeof(buffer), buffer) &&
-      (readBitMask(buffer, NON_ACC_SDO_ERROR)) == 0)
+      (buffer[2] & 0x0F) == 0)
   {
-    return readBitMask(buffer, NON_ACC_SDO_DATA); // will be zero for a write
+    uint8_t output = {0};
+    output = buffer[1] << 3;            // first 5 bits of data
+    output = output | (buffer[2] >> 5); // last 3 bits of data
+    return output;
   }
   else
   {
@@ -227,30 +240,35 @@ uint8_t AISx120SX::readWriteReg(uint8_t address, uint8_t data = 0)
 // reads the acceleration values from the sensor
 int16_t *AISx120SX::readAccel()
 {
-  int16_t accel[2] = {0}; // initialize acceleration array
+  static int16_t accel[2] = {0}; // initialize acceleration array
 
   for (size_t i = 0; i < axisNumber; i++) // iterate through the available axes
   {
     // create the command to send to the device
-    uint32_t command;                            // empty command
-    writeBitMask(command, ACC_SDI_CH_SELECT, i); // set channel
-    writeBitMask(command, ACC_SDI_SEN, 1U);      // set sensor data
+    uint8_t command[4] = {0};            // empty command
+    command[0] = command[0] | (i << 6);  // channel
+    command[0] = command[0] | (1U << 5); // sensor sata mode
 
     if (calculateEvenParity(command, sizeof(command))) // if even
     {
-      writeBitMask(command, ACC_SDI_PARITY, 1U); // set parity to odd
+      bitSet(command[0], 4); // set parity to odd
     }
 
     // calculate and set the CRC
-    unsigned char crc = Fast_CRC_Cal8Bits(0, sizeof(command), command);
-    writeBitMask(command, ACC_SDI_CRC, crc);
+    unsigned char crc = Fast_CRC_Cal8Bits(0, sizeof(command),
+                                          command);
+    command[3] = crc;
 
     // send the request to the device
     // start SPI communication with the device
     SPI.beginTransaction(AISSettings);
     digitalWrite(_CS, LOW);
 
-    SPI.transfer(command, sizeof(command)); // transfer the command
+    // send the command
+    SPI.transfer(command[0]);
+    SPI.transfer(command[1]);
+    SPI.transfer(command[2]);
+    SPI.transfer(command[3]);
 
     // end SPI communication
     digitalWrite(_CS, HIGH);
@@ -261,32 +279,41 @@ int16_t *AISx120SX::readAccel()
     // to the device to process the request
     // delayMicroseconds(10); // wait a bit before reading
 
-    uint32_t buffer; // buffer where to store the reading
+    uint8_t buffer[4]; // buffer where to store the reading
 
     // receive the request to the device
     // start SPI communication with the device
     SPI.beginTransaction(AISSettings);
     digitalWrite(_CS, LOW);
 
-    SPI.transfer(buffer, sizeof(buffer)); // receive the reading
+    // receive the reading
+    buffer[0] = SPI.transfer(0);
+    buffer[1] = SPI.transfer(0);
+    buffer[2] = SPI.transfer(0);
+    buffer[3] = SPI.transfer(0);
 
     // end SPi communication
     digitalWrite(_CS, HIGH);
     SPI.endTransaction();
 
     // verify the CRC
-    crc = readBitMask(buffer, ACC_SDO_CRC); // get the CRC
-    writeBitMask(buffer, ACC_SDO_CRC, 0);   // clear the crc from the buffer
+    crc = buffer[3]; // get the CRC
+    buffer[3] = 0;   // clear the crc from the buffer
 
     // if CRCs match and there are no error flags
     if (crc == Fast_CRC_Cal8Bits(0, sizeof(buffer), buffer) &&
-        (readBitMask(buffer, ACC_SDO_ERROR)) == 0)
+        (buffer[2] & 0x0F) == 0)
     {
-      // get acceleration and left shift 2 bits to get align 14 bits on 16
+      // get acceleration
+      accel[i] = ((uint16_t)buffer[0]) << 12;             // first 2 bits acc
+      accel[i] = accel[i] | (((uint16_t)buffer[1]) << 4); // central 8 bits acc
+      accel[i] = accel[i] | (buffer[1] >> 4);             // last 4 bits acc
+      // left shift 2 bits to get align 14 bits on 16
       // Note that putting the acceleration as a 16-bit integer
       // effectively means that the magnitude of the acceleration is 4 times
       // larger and should be normalized by a quarter of the resolution.
-      accel[i] = readBitMask(buffer, ACC_SDO_DATA) << 2;
+      // get the acceleration
+      accel[i] = accel[i] << 2;
     }
     else
     {
@@ -297,13 +324,13 @@ int16_t *AISx120SX::readAccel()
 }
 
 // updates the given status register
-uint8_t AISx120SX::updateStatus(uint8_t address)
+void AISx120SX::updateStatus(uint8_t address)
 {
-  uint8_t reading = readWriteReg(address);
+  uint8_t reading = readWriteReg(address, 0);
   switch (address)
   {
   case REG_STATUS_0:
-    status = readBitMask(reading, STATUS);
+    status = static_cast<statusTypes>(readBitMask(reading, STATUS));
     testmode_enabled = readBitMask(reading, TESTMODE_ENABLED);
     reg_ctrl_0_wr_err = readBitMask(reading, REG_CTRL_0_WR_ERR_LATCH);
     loss_cap = readBitMask(reading, LOSSCAP_ERR_LATCH);
@@ -315,7 +342,7 @@ uint8_t AISx120SX::updateStatus(uint8_t address)
     spi_err = readBitMask(reading, SPI_ERR);
     eeprom_err = readBitMask(reading, EEPROM_ERR_LATCH);
     off_canc_chy_err = readBitMask(reading, OFF_CANC_CHY_ERR);
-    off_canc_chx_err = readBitMask(reading, OFF_CANC_CHx_ERR);
+    off_canc_chx_err = readBitMask(reading, OFF_CANC_CHX_ERR);
     reg_config_wr_err = readBitMask(reading, REG_CONFIG_WR_ERR_LATCH);
     reg_ctrl_1_wr_err = readBitMask(reading, REG_CTRL_1_WR_ERR_LATCH);
     break;
@@ -335,36 +362,36 @@ uint8_t AISx120SX::updateStatus(uint8_t address)
 // performs self tests on the device
 void AISx120SX::selfTest()
 {
-  uint8_t command; // empty command
+  uint8_t command; // command to send
 
   // x-axis
-  writeBitMask(command, SELF_TEST_CMD, 1U); // x axis positive voltage
-  readWriteReg(REG_CTRL1, command);
-  delay(250);                              // give the sensor time to react
-  writeBitMask(command, SELF_TEST_CMD, 0); // 0g
-  readWriteReg(REG_CTRL1, command);
-  delay(250);                               // give the sensor time to react
-  writeBitMask(command, SELF_TEST_CMD, 2U); // x axis negative voltage
-  readWriteReg(REG_CTRL1, command);
-  delay(250);                              // give the sensor time to react
-  writeBitMask(command, SELF_TEST_CMD, 0); // 0g
-  readWriteReg(REG_CTRL1, command);
+  command = writeBitMask(0, SELF_TEST_CMD, 1U); // x axis positive voltage
+  readWriteReg(REG_CTRL_1, command);
+  delay(250);                                  // give the sensor time to react
+  command = writeBitMask(0, SELF_TEST_CMD, 0); // 0g
+  readWriteReg(REG_CTRL_1, command);
+  delay(250);                                   // give the sensor time to react
+  command = writeBitMask(0, SELF_TEST_CMD, 2U); // x axis negative voltage
+  readWriteReg(REG_CTRL_1, command);
+  delay(250);                                  // give the sensor time to react
+  command = writeBitMask(0, SELF_TEST_CMD, 0); // 0g
+  readWriteReg(REG_CTRL_1, command);
   delay(250); // give the sensor time to react
 
   // y-axis
-  if (axisCount == 2)
+  if (axisNumber == 2)
   {
-    writeBitMask(command, SELF_TEST_CMD, 5U); // y axis positive voltage
-    readWriteReg(REG_CTRL1, command);
-    delay(250);                              // give the sensor time to react
-    writeBitMask(command, SELF_TEST_CMD, 0); // 0g
-    readWriteReg(REG_CTRL1, command);
-    delay(250);                               // give the sensor time to react
-    writeBitMask(command, SELF_TEST_CMD, 6U); // y axis negative voltage
-    readWriteReg(REG_CTRL1, command);
-    delay(250);                              // give the sensor time to react
-    writeBitMask(command, SELF_TEST_CMD, 0); // 0g
-    readWriteReg(REG_CTRL1, command);
+    command = writeBitMask(0, SELF_TEST_CMD, 5U); // y axis positive voltage
+    readWriteReg(REG_CTRL_1, command);
+    delay(250);                                  // give the sensor time to react
+    command = writeBitMask(0, SELF_TEST_CMD, 0); // 0g
+    readWriteReg(REG_CTRL_1, command);
+    delay(250);                                   // give the sensor time to react
+    command = writeBitMask(0, SELF_TEST_CMD, 6U); // y axis negative voltage
+    readWriteReg(REG_CTRL_1, command);
+    delay(250);                                  // give the sensor time to react
+    command = writeBitMask(0, SELF_TEST_CMD, 0); // 0g
+    readWriteReg(REG_CTRL_1, command);
     delay(250); // give the sensor time to react
   }
 }
