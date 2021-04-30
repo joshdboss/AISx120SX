@@ -172,7 +172,7 @@ uint8_t AISx120SX::readWriteReg(uint8_t address, uint8_t data)
   command[1] = command[1] | (data >> 3);    // first 5 bits of data
   command[2] = command[2] | (data << 5);    // last 3 bits of data
 
-  if (calculateEvenParity(command, sizeof(command))) // if even
+  if (!calculateEvenParity(command, sizeof(command))) // if even
   {
     bitSet(command[0], 4); // set parity to odd
   }
@@ -218,12 +218,8 @@ uint8_t AISx120SX::readWriteReg(uint8_t address, uint8_t data)
   digitalWrite(_CS, HIGH);
   SPI.endTransaction();
 
-  // verify the CRC
-  crc = buffer[3]; // get the CRC
-  buffer[3] = 0;   // clear the crc from the buffer
-
   // if CRCs match and there are no error flags
-  if (crc == Fast_CRC_Cal8Bits(0, sizeof(buffer), buffer) &&
+  if (Fast_CRC_Cal8Bits(buffer[3], sizeof(buffer), buffer) == 0 &&
       (buffer[2] & 0x0F) == 0)
   {
     uint8_t output = {0};
@@ -301,7 +297,7 @@ int16_t *AISx120SX::readAccel()
     buffer[3] = 0;   // clear the crc from the buffer
 
     // if CRCs match and there are no error flags
-    if (crc == Fast_CRC_Cal8Bits(0, sizeof(buffer), buffer) &&
+    if (Fast_CRC_Cal8Bits(buffer[3], sizeof(buffer), buffer) == 0 &&
         (buffer[2] & 0x0F) == 0)
     {
       // get acceleration
