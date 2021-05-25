@@ -10,6 +10,7 @@
 AISx120SX::AISx120SX(uint8_t CS)
 {
   _CS = CS;
+  pinMode(_CS, OUTPUT); // Set CS pin to be an output
   SPISettings AISSettings(5000000, MSBFIRST, SPI_MODE3);
 }
 
