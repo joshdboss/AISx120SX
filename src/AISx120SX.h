@@ -18,13 +18,15 @@
 #include "AIS_regs.h"
 #include "CRC.h"
 
-typedef enum {
+typedef enum
+{
   _400Hz,
   _800Hz,
   _1600Hz
 } bandwidth;
 
-typedef enum {
+typedef enum
+{
   initialization,
   normal,
   test,
@@ -47,7 +49,7 @@ private:
   bool loss_cap;
   bool end_of_pwrup;
   bool rst_active;
-  
+
   // REG_STATUS_1 flags
   bool spi_err;
   bool eeprom_err;
@@ -55,7 +57,7 @@ private:
   bool off_canc_chx_err;
   bool reg_config_wr_err;
   bool reg_ctrl_1_wr_err;
-  
+
   // REG_STATUS_2 flags
   bool a2d_sat_chy;
   bool a2d_sat_chx;
@@ -95,7 +97,9 @@ public:
   ~AISx120SX();
 
   // verifies there were no boot errors and sets up the device
-  bool setup(bandwidth bandwidthX, bandwidth bandwidthY);
+  bool setup(bandwidth bandwidthX, bandwidth bandwidthY,
+             bool x_offset_monitor, bool x_offset_canc,
+             bool y_offset_monitor, bool y_offset_canc);
 
   // perform a soft reset of the device
   bool reset();
